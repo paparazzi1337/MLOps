@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow-webserver:
+    build: .
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /opt/airflow/airflow-webserver.pid ]"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__LOGGING__REMOTE_LOG_READER: airflow.utils.log.file_task_handler.FileTaskHandler
+      AIRFLOW__WEBSERVER__SECRET_KEY: your_secret_key_123456
+      AIRFLOW__CORE__FERNET_KEY: eIHyRoeVNP60mlzcM4HNflQQnxHWf7WzayMdy9hJ1lE=
+    user: "0:0"  # Запускать от root временно
+    volumes:
+      - ./datasets:/opt/airflow/datasets
+      - ./scripts:/opt/airflow/scripts
+      - ./dags:/opt/airflow/dags
+      - ./models:/opt/airflow/models
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      airflow db reset -y &&
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com &&
+      airflow webserver
+      "
+
+  airflow-scheduler:
+    build: .
+    restart: always
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__LOGGING__REMOTE_LOG_READER: airflow.utils.log.file_task_handler.FileTaskHandler
+      AIRFLOW__WEBSERVER__SECRET_KEY: your_secret_key_123456
+      AIRFLOW__CORE__FERNET_KEY: eIHyRoeVNP60mlzcM4HNflQQnxHWf7WzayMdy9hJ1lE=
+    user: "0:0"  # Запускать от root временно
+    volumes:
+      - ./datasets:/opt/airflow/datasets
+      - ./scripts:/opt/airflow/scripts
+      - ./dags:/opt/airflow/dags
+      - ./models:/opt/airflow/models
+    command: airflow scheduler
+
+volumes:
+  postgres-db-volume:
